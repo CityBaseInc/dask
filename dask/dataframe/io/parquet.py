@@ -1155,7 +1155,7 @@ def read_parquet(path, columns=None, filters=None, categories=None, index=None,
 
 def to_parquet(df, path, engine='auto', compression='default', write_index=None,
                append=False, ignore_divisions=False, partition_on=None,
-               storage_options=None, compute=True, **kwargs):
+               storage_options=None, compute=True, update=True, **kwargs):
     """Store Dask.dataframe to Parquet files
 
     Notes
