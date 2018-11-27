@@ -21,6 +21,7 @@ from ...bytes.core import get_fs_token_paths
 from ...bytes.utils import infer_storage_options
 from ...utils import import_required, natural_sort_key
 from .utils import _get_pyarrow_dtypes, _meta_from_dtypes
+from .io import from_pandas
 
 __all__ = ('read_parquet', 'to_parquet')
 
@@ -550,7 +551,7 @@ def _write_partition_fastparquet(df, fs, path, filename, fmd, compression,
 
 def _write_fastparquet(df, fs, fs_token, path, write_index=None, append=False,
                        ignore_divisions=False, partition_on=None,
-                       compression=None, **kwargs):
+                       compression=None, replace=False, **kwargs):
     import fastparquet
 
     fs.mkdirs(path)
@@ -569,13 +570,57 @@ def _write_fastparquet(df, fs, fs_token, path, write_index=None, append=False,
         ignore_divisions = True
         index_cols = []
 
-    if append:
+    if append or replace:
         try:
             pf = fastparquet.api.ParquetFile(path, open_with=fs.open, sep=sep)
         except (IOError, ValueError):
             # append for create
-            append = False
-    if append:
+            append, replace = False, False
+    if replace:
+        index_vals = list(df.compute()['index'])
+        fmd = copy.copy(pf.fmd)
+        part_index = fastparquet.api.sorted_partitioned_columns(pf)['index']
+
+        index_mapping  = {}
+        for part_num, index_pair in enumerate(zip(part_index['min'], part_index['max'])):
+            index_mapping[part_num] = range(index_pair[0], index_pair[1] + 1)
+
+        update_partitions = {}
+        for oi in index_mapping:
+            update_partitions[oi] = set()
+            for i in index_vals:
+                if i in set(index_mapping[oi]):
+                    update_partitions[oi].add(i)
+
+        updated_parts = []
+        filenames = []
+        parts = set()
+
+        for part in update_partitions:
+            if update_partitions[part]:
+                partition_indicies = list(update_partitions[part])
+                updates = df.compute().set_index('index').loc[partition_indicies]
+                updates = from_pandas(updates, npartitions=1)
+
+                filename = 'part.%i.parquet' % part
+                old_part = read_parquet(fs.sep.join([path, filename]))
+                updated = updates.combine_first(old_part)
+                updated = from_pandas(updated.compute().reset_index(), npartitions=1)
+                updated_parts.append(updated.to_delayed()[0])
+                filenames.append(filename)
+                parts.add(part)
+
+        all_parts = set(range(len(fmd.row_groups) - 1))
+        parts = all_parts - parts
+
+        fmd.row_groups = [fmd.row_groups[p] for p in parts]
+
+        write = delayed(_write_partition_fastparquet, pure=False)
+        writes = [write(part, fs, path, filename, fmd, compression, partition_on)
+              for filename, part in zip(filenames, updated_parts)]
+
+        return delayed(_write_metadata)(writes, filenames, fmd, path, fs, sep)
+    elif append:
         if pf.file_scheme not in ['hive', 'empty', 'flat']:
             raise ValueError('Requested file scheme is hive, '
                              'but existing file scheme is not.')
