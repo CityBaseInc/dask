@@ -69,7 +69,7 @@ new_data_dd = dd.from_pandas(new_data,
 #+END_SRC
 
 When we evaluate the individual paritions being written, we see that they reflect the old data:
-#+BEGIN_SRC python :session t
+#+BEGIN_SRC python :session t :exports both
 dd.read_parquet('./toy_data.parq/part.0.parquet').compute()
 #+END_SRC
 
@@ -83,19 +83,19 @@ dd.read_parquet('./toy_data.parq/part.0.parquet').compute()
 
 
 
-#+BEGIN_SRC python :session t
+#+BEGIN_SRC python :session t :exports both
 dd.read_parquet('./toy_data.parq/part.2.parquet').compute()
 #+END_SRC
 
 #+RESULTS:
-:         name  num shirt_size
-: index                       
-: 9      Donna    9      large
-: 10     Mikey   10      small
+:       name  num shirt_size
+: index                     
+: 9      Liz    5      small
+: 10     Joe    8      small
 
 
 Now, using `to_parquet` with `replace=True`, and reading in the new data, we get the following result:
-#+BEGIN_SRC python :session t
+#+BEGIN_SRC python :session t :exports both
 new_data_dd.to_parquet('./toy_data.parq', replace=True)
 dd.read_parquet('./toy_data.parq').compute()
 #+END_SRC
@@ -115,6 +115,8 @@ index
 9          Liz    5      small
 10         Joe    8      small
 #+end_example
+
+
 
 We can see that for indicies 1, 9, and 10, the changes we made above are reflected in the data we read in.
 
