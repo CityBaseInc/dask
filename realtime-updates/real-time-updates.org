@@ -1,0 +1,126 @@
+* Setup
+#+BEGIN_SRC python :results none :csession t
+import sys
+import math
+import copy
+
+import toolz
+import snappy
+import fastparquet
+import numpy as np
+import pandas as pd
+
+sys.path.append('/Users/vanguiano/Projects/dask')
+
+from dask import delayed
+import dask.dataframe as dd
+from dask.dataframe.io.parquet import _write_partition_fastparquet
+from dask.bytes.core import get_fs_token_paths
+from dask.dataframe.io.parquet import _write_metadata
+#+End_Src
+
+* Context and Problem
+When writing to an existing parquet file, we have the option of using `append=True` to add an additional partition to our data.
+When doing so, two potential cases include:
+- Appending data with non-overlapping indicies, which results in an added parition. To do this, we set `ignore_divisions=False`, 
+  which is the default setting.
+- Appending data with overlapping indicies, which will throw an error unless `ignore_divisions=True`. When indicies are ignored,
+  the records with existing index values are not replaced. Instead, there ends up being multiple records with the same index
+  value.
+
+In the case that we wanted to write updates to particular records, neither of the cases above would allow for this. The way we
+would overwrite existing records would be to rewrite the entire parquet file including all of its partitions. An alternative
+to would be to overwrite only those partitions which contain the records we want to overwrite. Below is a working example of the
+functionality being proposed by this pull request.
+
+* Example
+#+BEGIN_SRC python :results none :session t
+
+data = pd.DataFrame(data=[['Vidal', 1, 'large'],
+                          ['Brandon', 2, 'medium'],
+                          ['Alex', 3, 'large'],
+                          ['Duffy', 4, 'large'],
+                          ['Liz', 5, 'small'],
+                          ['James', 6, 'large'],
+                          ['Jack', 7, 'medium'],
+                          ['Jill', 99, 'large'],
+                          ['Donna', 9, 'large'],
+                          ['Mikey', 10, 'small']], 
+                        columns=['name', 'num', 'shirt_size'], index=range(1,11))
+
+# Create Dask DataFrames for above toy data
+data_dd = dd.from_pandas(data, 
+                             npartitions = 3)
+                                
+data_dd.to_parquet('./toy_data.parq')
+#+END_SRC
+
+Next, we will make updates to the above dataset at indicies 1, 9, and 10 using this data:
+
+#+BEGIN_SRC python :results none :session t
+new_data = pd.DataFrame(data=[['Vidal', 1, '2xlarge'],
+                              ['Liz', 5, 'small'],
+                              ['Joe', 8, 'small']], 
+                        columns=['name', 'num', 'shirt_size'], index=[1,9,10])
+
+# Create Dask DataFrames for above toy data
+new_data_dd = dd.from_pandas(new_data, 
+                             npartitions = 1)
+#+END_SRC
+
+When we evaluate the individual paritions being written, we see that they reflect the old data:
+#+BEGIN_SRC python :session t
+dd.read_parquet('./toy_data.parq/part.0.parquet').compute()
+#+END_SRC
+
+#+RESULTS:
+:           name  num shirt_size
+: index                         
+: 1        Vidal    1      large
+: 2      Brandon    2     medium
+: 3         Alex    3      large
+: 4        Duffy    4      large
+
+
+
+#+BEGIN_SRC python :session t
+dd.read_parquet('./toy_data.parq/part.2.parquet').compute()
+#+END_SRC
+
+#+RESULTS:
+:         name  num shirt_size
+: index                       
+: 9      Donna    9      large
+: 10     Mikey   10      small
+
+
+Now, using `to_parquet` with `replace=True`, and reading in the new data, we get the following result:
+#+BEGIN_SRC python :session t
+new_data_dd.to_parquet('./toy_data.parq', replace=True)
+dd.read_parquet('./toy_data.parq').compute()
+#+END_SRC
+
+#+RESULTS:
+#+begin_example
+          name  num shirt_size
+index                         
+5          Liz    5      small
+6        James    6      large
+7         Jack    7     medium
+8         Jill   99      large
+1        Vidal    1    2xlarge
+2      Brandon    2     medium
+3         Alex    3      large
+4        Duffy    4      large
+9          Liz    5      small
+10         Joe    8      small
+#+end_example
+
+We can see that for indicies 1, 9, and 10, the changes we made above are reflected in the data we read in.
+
+Notes:
+- As currently implemented, setting `replace=True` automatically sets `append=False`. In the case that the dataset includes
+indicies not included in the original dataset, those records are simply ignored.
+- A future enhancement would be to create functionality where `replace=True` also appends records for indicies that do not already
+exist in the data.
+- Notice that the above dataset is returned with disordered indicies. A fix for this must also be implemented.
