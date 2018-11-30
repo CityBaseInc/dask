@@ -1,4 +1,4 @@
-* Setup
+
 #+BEGIN_SRC python :results none :csession t :exports none
 import sys
 import math
