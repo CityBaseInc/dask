@@ -126,3 +126,4 @@ indicies not included in the original dataset, those records are simply ignored.
 - A future enhancement would be to create functionality where `replace=True` also appends records for indicies that do not already
 exist in the data.
 - Notice that the above dataset is returned with disordered indicies. A fix for this must also be implemented.
+- Need to make update to documentation.
