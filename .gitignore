@@ -20,3 +20,4 @@ hdfs-initialized-indicator
 mydask.png
 .vscode/
 *.parq
+*.parquet
