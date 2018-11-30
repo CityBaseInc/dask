@@ -55,7 +55,7 @@ data_dd = dd.from_pandas(data,
 data_dd.to_parquet('./toy_data.parq')
 #+END_SRC
 
-Next, we will make updates to the above dataset at indicies 1, 9, and 10 using this data:
+Let's say we wanted to make updates to the above dataset at indicies 1, 9, and 10 using this data:
 
 #+BEGIN_SRC python :results none :session t
 new_data = pd.DataFrame(data=[['Vidal', 1, '2xlarge'],
@@ -68,7 +68,7 @@ new_data_dd = dd.from_pandas(new_data,
                              npartitions = 1)
 #+END_SRC
 
-When we evaluate the individual paritions being written, we see that they reflect the old data:
+Before writing the above new data, let's evaluate the individual paritions to verify that they reflect the old data:
 #+BEGIN_SRC python :session t :exports both
 dd.read_parquet('./toy_data.parq/part.0.parquet').compute()
 #+END_SRC
@@ -94,7 +94,7 @@ dd.read_parquet('./toy_data.parq/part.2.parquet').compute()
 : 10     Joe    8      small
 
 
-Now, using ~to_parquet~ with ~replace=True~, and reading in the new data, we get the following result:
+Now, using ~to_parquet~ with ~replace=True~, we write the ~new_data~ defined above to the same parquet file written above, ~./toy_data.parq~. Reading in the new data, we get the following result:
 #+BEGIN_SRC python :session t :exports both
 new_data_dd.to_parquet('./toy_data.parq', replace=True)
 dd.read_parquet('./toy_data.parq').compute()
@@ -108,12 +108,12 @@ index
 6        James    6      large
 7         Jack    7     medium
 8         Jill   99      large
-1        Vidal    1    2xlarge
+1        Vidal    1    *2xlarge*
 2      Brandon    2     medium
 3         Alex    3      large
 4        Duffy    4      large
-9          Liz    5      small
-10         Joe    8      small
+9          *Liz*    5      small
+10         *Joe*    8      small
 #+end_example
 
 
