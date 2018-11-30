@@ -1345,3 +1345,34 @@ def test_informative_error_messages():
     assert 'foo' in str(info.value)
     assert 'arrow' in str(info.value)
     assert 'fastparquet' in str(info.value)
+
+
+def test_append_cat_fp(tmpdir):
+    pytest.importorskip('fastparquet')
+    path = str(tmpdir)
+    # https://github.com/dask/dask/issues/4120
+    df = pd.DataFrame({"x": ["a", "a", "b", "a", "b"]})
+    df["x"] = df["x"].astype("category")
+    ddf = dd.from_pandas(df, npartitions=1)
+
+    dd.to_parquet(ddf, path)
+
+    # this fails:
+    dd.to_parquet(ddf, path, append=True, ignore_divisions=True)
+    d = dd.read_parquet(path).compute()
+    assert d['x'].tolist() == ["a", "a", "b", "a", "b"] * 2
+
+
+def test_passing_parquetfile(tmpdir):
+    import shutil
+    fp = pytest.importorskip('fastparquet')
+    path = str(tmpdir)
+    df = pd.DataFrame({"x": [1, 3, 2, 4]})
+    ddf = dd.from_pandas(df, npartitions=1)
+
+    dd.to_parquet(ddf, path)
+    pf = fp.ParquetFile(path)
+    shutil.rmtree(path)
+
+    # should pass, because no need to re-read metadata
+    dd.read_parquet(pf)
