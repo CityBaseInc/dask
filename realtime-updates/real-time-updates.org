@@ -88,10 +88,10 @@ dd.read_parquet('./toy_data.parq/part.2.parquet').compute()
 #+END_SRC
 
 #+RESULTS:
-:       name  num shirt_size
-: index                     
-: 9      Liz    5      small
-: 10     Joe    8      small
+:         name  num shirt_size
+: index                       
+: 9      Donna    9      large
+: 10     Mikey   10      small
 
 
 Now, using ~to_parquet~ with ~replace=True~, we write the ~new_data~ defined above to the same parquet file written above, ~./toy_data.parq~. Reading in the new data, we get the following result:
