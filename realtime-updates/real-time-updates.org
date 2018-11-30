@@ -20,11 +20,11 @@ from dask.dataframe.io.parquet import _write_metadata
 #+End_Src
 
 * Context and Problem
-When writing to an existing parquet file, we have the option of using `append=True` to add an additional partition to our data.
+When writing to an existing parquet file, we have the option of using ~append=True~ to add an additional partition to our data.
 When doing so, two potential cases include:
-- Appending data with non-overlapping indicies, which results in an added parition. To do this, we set `ignore_divisions=False`, 
+- Appending data with non-overlapping indicies, which results in an added parition. To do this, we set ~ignore_divisions=False~, 
   which is the default setting.
-- Appending data with overlapping indicies, which will throw an error unless `ignore_divisions=True`. When indicies are ignored,
+- Appending data with overlapping indicies, which will throw an error unless ~ignore_divisions=True~. When indicies are ignored,
   the records with existing index values are not replaced. Instead, there ends up being multiple records with the same index
   value.
 
@@ -94,7 +94,7 @@ dd.read_parquet('./toy_data.parq/part.2.parquet').compute()
 : 10     Joe    8      small
 
 
-Now, using `to_parquet` with `replace=True`, and reading in the new data, we get the following result:
+Now, using ~to_parquet~ with ~replace=True~, and reading in the new data, we get the following result:
 #+BEGIN_SRC python :session t :exports both
 new_data_dd.to_parquet('./toy_data.parq', replace=True)
 dd.read_parquet('./toy_data.parq').compute()
@@ -121,7 +121,7 @@ index
 We can see that for indicies 1, 9, and 10, the changes we made above are reflected in the data we read in.
 
 Notes:
-- As currently implemented, setting `replace=True` automatically sets `append=False`. In the case that the dataset includes indicies not included in the original dataset, those records are simply ignored.
-- A future enhancement would be to create functionality where `replace=True` also appends records for indicies that do not already exist in the data.
+- As currently implemented, setting ~replace=True~ automatically sets ~append=False~. In the case that the dataset includes indicies not included in the original dataset, those records are simply ignored.
+- A future enhancement would be to create functionality where ~replace=True~ also appends records for indicies that do not already exist in the data.
 - Notice that the above dataset is returned with disordered indicies. A fix for this must also be implemented.
 - Need to make update to documentation.
