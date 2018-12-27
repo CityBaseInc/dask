@@ -5,13 +5,14 @@ import pickle
 import numpy as np
 import pytest
 
-from dask.sharedict import ShareDict
+from dask.compatibility import PY2
 from dask.utils import (takes_multiple_arguments, Dispatch, random_state_data,
                         memory_repr, methodcaller, M, skip_doctest,
                         SerializableLock, funcname, ndeepmap, ensure_dict,
                         extra_titles, asciitable, itemgetter, partial_by_order,
                         has_keyword)
 from dask.utils_test import inc
+from dask.highlevelgraph import HighLevelGraph
 
 
 def test_takes_multiple_arguments():
@@ -257,6 +258,22 @@ def test_SerializableLock_name_collision():
     assert d.lock not in (a.lock, b.lock, c.lock)
 
 
+def test_SerializableLock_locked():
+    a = SerializableLock('a')
+    assert not a.locked()
+    with a:
+        assert a.locked()
+    assert not a.locked()
+
+
+@pytest.mark.skipif(PY2, reason="no blocking= keyword in Python 2")
+def test_SerializableLock_acquire_blocking():
+    a = SerializableLock('a')
+    assert a.acquire(blocking=True)
+    assert not a.acquire(blocking=False)
+    a.release()
+
+
 def test_funcname():
     def foo(a, b, c):
         pass
@@ -315,10 +332,9 @@ def test_ndeepmap():
 def test_ensure_dict():
     d = {'x': 1}
     assert ensure_dict(d) is d
-    sd = ShareDict()
-    sd.update(d)
-    assert type(ensure_dict(sd)) is dict
-    assert ensure_dict(sd) == d
+    hlg = HighLevelGraph.from_collections('x', d)
+    assert type(ensure_dict(hlg)) is dict
+    assert ensure_dict(hlg) == d
 
     class mydict(dict):
         pass

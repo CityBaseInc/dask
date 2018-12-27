@@ -287,6 +287,13 @@ def test_tensordot_2(axes):
               np.tensordot(x, x, axes=axes))
 
 
+def test_tensordot_more_than_26_dims():
+    ndim = 27
+    x = np.broadcast_to(1, [2] * ndim)
+    dx = da.from_array(x, chunks=-1)
+    assert_eq(da.tensordot(dx, dx, ndim), np.array(2**ndim))
+
+
 def test_dot_method():
     x = np.arange(400).reshape((20, 20))
     a = da.from_array(x, chunks=(5, 5))
@@ -879,6 +886,28 @@ def test_dstack():
     assert_eq(np.dstack((x[None, :], y[None, :])),
               da.dstack((a[None, :], b[None, :])))
     assert_eq(np.dstack((x, y)), da.dstack((a, b)))
+
+
+@pytest.mark.parametrize('np_func,dsk_func,nan_chunk', [
+    (np.hstack, da.hstack, 0),
+    (np.dstack, da.dstack, 1),
+    (np.vstack, da.vstack, 2),
+])
+def test_stack_unknown_chunk_sizes(np_func, dsk_func, nan_chunk):
+    shape = (100, 100, 100)
+    x = da.ones(shape, chunks=(50, 50, 50))
+    y = np.ones(shape)
+
+    tmp = list(x._chunks)
+    tmp[nan_chunk] = (np.nan,) * 2
+    x._chunks = tuple(tmp)
+
+    with pytest.raises(ValueError):
+        dsk_func((x, x))
+
+    np_stacked = np_func((y, y))
+    dsk_stacked = dsk_func((x, x), allow_unknown_chunksizes=True)
+    assert_eq(np_stacked, dsk_stacked)
 
 
 def test_take():

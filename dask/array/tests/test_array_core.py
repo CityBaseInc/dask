@@ -24,13 +24,14 @@ from dask.delayed import Delayed, delayed
 from dask.utils import ignoring, tmpfile, tmpdir, key_split
 from dask.utils_test import inc, dec
 
-from dask.array.core import (getem, getter, top, dotmany, concatenate3,
+from dask.array.core import (getem, getter, dotmany, concatenate3,
                              broadcast_dimensions, Array, stack, concatenate,
                              from_array, broadcast_shapes,
                              broadcast_to, blockdims_from_blockshape, store,
                              optimize, from_func, normalize_chunks,
-                             broadcast_chunks, atop, from_delayed,
+                             broadcast_chunks, from_delayed,
                              concatenate_axes, common_blockdim)
+from dask.array.top import top, atop
 from dask.array.utils import assert_eq, same_keys
 
 # temporary until numpy functions migrated
@@ -1122,6 +1123,27 @@ def test_map_blocks_block_info():
 
     z = da.map_blocks(func, x, 100, x + 1, dtype=x.dtype)
     assert_eq(z, x + x + 1 + 100)
+
+
+def test_map_blocks_block_info_with_axis():
+    # https://github.com/dask/dask/issues/4298
+    values = da.from_array(np.array(['a', 'a', 'b', 'c']), 2)
+
+    def func(x, block_info=None):
+        assert set(block_info.keys()) == {0}
+        assert block_info[0]['shape'] == (4,)
+        assert block_info[0]['num_chunks'] == (2,)
+
+        assert block_info['chunk-location'] in {(0,), (1,)}
+
+        if block_info['chunk-location'] == (0,):
+            assert block_info['array-location'] == [(0, 2)]
+        elif block_info['chunk-location'] == (1,):
+            assert block_info['array-location'] == [(2, 4)]
+
+        return np.ones((len(x), 3))
+
+    values.map_blocks(func, chunks=((2, 2), 3), new_axis=1, dtype='f8')
 
 
 def test_map_blocks_with_constants():
@@ -2590,14 +2612,6 @@ def test_map_blocks_with_changed_dimension():
     with pytest.raises(ValueError):
         d.map_blocks(lambda b: b.sum(axis=0), chunks=((4, 4, 4),), drop_axis=0)
 
-    # Can't drop axis with more than 1 block
-    with pytest.raises(ValueError):
-        d.map_blocks(lambda b: b.sum(axis=1), drop_axis=1, dtype=d.dtype)
-
-    # Adding axis with a gap
-    with pytest.raises(ValueError):
-        d.map_blocks(lambda b: b, new_axis=(3, 4))
-
     d = da.from_array(x, chunks=(4, 8))
     e = d.map_blocks(lambda b: b.sum(axis=1), drop_axis=1, dtype=d.dtype)
     assert e.chunks == ((4, 3),)
@@ -2615,6 +2629,10 @@ def test_map_blocks_with_changed_dimension():
     assert e.chunks == ((1,), (4, 4), (4, 4), (1,))
     assert_eq(e, x[None, :, :, None])
 
+    # Adding axis with a gap
+    with pytest.raises(ValueError):
+        d.map_blocks(lambda b: b, new_axis=(3, 4))
+
     # Both new_axis and drop_axis
     d = da.from_array(x, chunks=(8, 4))
     e = d.map_blocks(lambda b: b.sum(axis=0)[:, None, None],
@@ -2627,6 +2645,15 @@ def test_map_blocks_with_changed_dimension():
                      drop_axis=1, new_axis=(1, 2), dtype=d.dtype)
     assert e.chunks == ((4, 4), (1,), (1,))
     assert_eq(e, x.sum(axis=1)[:, None, None])
+
+
+def test_map_blocks_with_changed_dimension_and_broadcast_chunks():
+    # https://github.com/dask/dask/issues/4299
+    a = da.from_array([1, 2, 3], 3)
+    b = da.from_array(np.array([0, 1, 2, 0, 1, 2]), chunks=3)
+    result = da.map_blocks(operator.add, a, b, chunks=b.chunks)
+    expected = da.from_array(np.array([1, 3, 5, 1, 3, 5]), chunks=3)
+    assert_eq(result, expected)
 
 
 def test_broadcast_chunks():
@@ -3598,3 +3625,14 @@ def test_slice_reversed():
     y = x[6:3]
 
     assert_eq(y, np.ones(0))
+
+
+def test_map_blocks_chunks():
+    x = da.arange(400, chunks=(100,))
+    y = da.arange(40, chunks=(10,))
+
+    def func(a, b):
+        return np.array([a.max(), b.max()])
+
+    assert_eq(da.map_blocks(func, x, y, chunks=(2,), dtype=x.dtype),
+              np.array([99, 9, 199, 19, 299, 29, 399, 39]))
