@@ -30,10 +30,9 @@ works as follows:
 1. Repartition the new data based on the partitions from the existing dataset
 2. Identify the partitions that these new data are located in
 3. Filter both the new data and the original data by partition and use ~combine_first~ only on that subset of partitions
-4. Write the newly combined paritions to the original dataset, over writing only the paritions that contained updated
-records.  
+4. Write the newly combined paritions to the original dataset, overwriting only the paritions that contain updated records.  
 
-The new implementation is 
+The new implementation is [[https://github.com/CityBaseInc/dask/commit/53681e969d15cd1f44395d08daa59a838f00c91c][here]].
 
 Here is an example that uses the new implementation:
 
