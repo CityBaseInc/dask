@@ -81,7 +81,7 @@ updated_data_dd.to_parquet('./orig_data.parq', replace=True)
 By reading in the data that was just written, we can see that the updates are reflected in the dataset below at
 indicies 1 and 10. There is, however, one glaring issue. The output returns a dataset that is not ordered by
 index value.
-#+BEGIN_SRC python :session x
+#+BEGIN_SRC python :session x :exports both
 dd.read_parquet('./orig_data.parq').compute()
 #+END_SRC
 
@@ -106,7 +106,7 @@ that this dataset cannot be updated in the way the original dataset was updated 
 1. We correct for the issue after the updated dataset has been written
 2. Build into the to_parquet functionality a check to make sure that the existing dataset has divisions - if not, 
 make the fix before proceeding. An example of code that fixes the issue is shown below. 
-#+BEGIN_SRC python :session x
+#+BEGIN_SRC python :session x :exports both
 dd.read_parquet('./orig_data.parq').known_divisions
 #+END_SRC
 
@@ -115,7 +115,7 @@ dd.read_parquet('./orig_data.parq').known_divisions
 
 The following code takes the dataset without divisions and disordered index and returns the same dataset with
 divisions and an ordered index.
-#+BEGIN_SRC python :session x
+#+BEGIN_SRC python :session x :exports both
 d = dd.read_parquet('./orig_data.parq')
 
 d = d.reset_index()
@@ -144,7 +144,7 @@ index
 #+end_example
 
 The divisions for the newly fixed dataset can be seen below.
-#+BEGIN_SRC python :session x
+#+BEGIN_SRC python :session x :exports both
 dd.read_parquet('./orig_data.parq').divisions
 #+END_SRC
 
