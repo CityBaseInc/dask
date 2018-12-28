@@ -596,44 +596,21 @@ def _write_fastparquet(df, fs, fs_token, path, write_index=None, append=False,
 
         if replace:
             append = False
+            orig_data = read_parquet(path)
+            div = orig_data.divisions
 
-            index_vals = list(df['index'].compute()) # NotImplementedError using list(df.index)
-            part_index = fastparquet.api.sorted_partitioned_columns(pf)['index']
+            df = df.set_index('index')
+            df.divisions = divisions
+            df = df.repartition(div, force=True)
 
-            partition_to_index_map  = {}
-            for part_num, index_pair in enumerate(zip(part_index['min'], part_index['max'])):
-                partition_to_index_map[part_num] = range(index_pair[0], index_pair[1] + 1)
+            changed_parts = [i for i, part in enumerate(df.partitions) if len(part) != 0]
+            updated_parts = df.partitions[changed_parts].combine_first(orig_data.partitions[changed_parts])
+            updated_parts = [part.reset_index().to_delayed()[0] for part in updated_parts.partitions]
 
-            indicies_to_update = {}
-            for part_num in partition_to_index_map:
-                indicies_to_update[part_num] = set()
-                for i in index_vals:
-                    partition_indicies = set(partition_to_index_map[part_num])
-                    if i in partition_indicies:
-                        indicies_to_update[part_num].add(i)
+            parts = set(range(orig_data.npartitions))
+            parts = parts - set(changed_parts)
 
-            updated_parts = []
-            filenames = []
-            part_nums = set()
-            for part_num in indicies_to_update:
-                if indicies_to_update[part_num]:
-                    part_nums.add(part_num)
-
-                    filename = 'part.%i.parquet' % part_num
-                    filenames.append(filename)
-
-                    partition_indicies = list(indicies_to_update[part_num])
-                    recs_to_update = df.compute().set_index('index').loc[partition_indicies]
-                    old_partition = pd.read_parquet(fs.sep.join([path, filename]))
-                    updated_part = recs_to_update.combine_first(old_partition)
-                    updated_part = from_pandas(updated_part.reset_index(), npartitions=1)
-                    updated_parts.append(updated_part.to_delayed()[0])
-
-            all_parts = set(range(len(fmd.row_groups) - 1))
-            part_nums = all_parts - part_nums
-
-            # Drops from metadata any row_groups that were updated
-            fmd.row_groups = [fmd.row_groups[p] for p in part_nums]
+            fmd.row_groups = [fmd.row_groups[p] for p in parts]
 
         if append:
             i_offset = fastparquet.writer.find_max_part(fmd.row_groups)
@@ -653,9 +630,10 @@ def _write_fastparquet(df, fs, fs_token, path, write_index=None, append=False,
                                                **kwargs)
         i_offset = 0
 
-
     if replace:
         partitions = updated_parts
+        filenames = ['part.%i.parquet' % (i)
+                     for i in changed_parts]
     else:
         partitions = df.to_delayed()
         filenames = ['part.%i.parquet' % (i + i_offset)
