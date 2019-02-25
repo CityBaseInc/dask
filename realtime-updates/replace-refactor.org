@@ -33,11 +33,7 @@ original_data = pd.DataFrame(data=[['Vidal', 1, 'large'],      # Old Records
 
 original_data_dd = dd.from_pandas(original_data, npartitions=3)
 
-t0 = time.time()
 original_data_dd.to_parquet('./data/orig_data.parq')
-t1 = time.time()
-
-print("PRINT:", t1-t0)
 
 #+END_SRC
 
@@ -47,18 +43,13 @@ original data, ensuring to set ~replace=True~.
 #+BEGIN_SRC python :session x :results none
 updated_data = pd.DataFrame(data=[['Alex', 3, 'large'],        # Updated record with index 1...
                                   ['Duffy', 5, 'large']],      # Updated record with index 10...
-                             columns=['name', 'num', 'shirt_size'],
-                        index = [1, 10])
+                            columns=['name', 'num', 'shirt_size'],
+                            index = [1, 10])
 
 updated_data_dd = dd.from_pandas(updated_data, npartitions=1)
 
-import time
 
-t0 = time.time()
 updated_data_dd.to_parquet('./data/orig_data.parq', replace=True)
-t1 = time.time()
-
-print("TIME:", t1-t0)
 #+END_SRC
 
 By reading in the data that was just written, we can see that the updates are reflected in the dataset below at
@@ -100,7 +91,6 @@ dd.read_parquet('./data/orig_data.parq').known_divisions
 The following code takes the dataset without divisions and disordered index and returns the same dataset with
 divisions and an ordered index.
 #+BEGIN_SRC python :session x :exports both
-t0 = time.time()
 d = dd.read_parquet('./data/orig_data.parq')
 
 d = d.reset_index()
@@ -108,9 +98,7 @@ d = d.reset_index()
 d = d.set_index('index')
 
 d.to_parquet('./data/orig_data.parq')
-t1 = time.time()
 
-print("PRINT:", t1-t0)
 dd.read_parquet('./data/orig_data.parq').compute()
 #+END_SRC
 
