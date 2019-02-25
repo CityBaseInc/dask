@@ -1,4 +1,4 @@
-
+* Updating a Parquet File Only in Partitions with New Records
 
 I discovered that ~combine_first~ can take any two dask dataframes with any number of partitions. In order to do this,
 it first makes the number of partitions equal across both dataframes by taking the set of all partition divisionsand creating new partitions based on that set. What results is two new dataframes with the same data but with new divisions, each of them lining up, and from there ~combine_first~ is used. I use this as inspiration for refactoring the ~replace=True~ functionality of ~to_parquet~. Note, the "new data" I will refer to going forward is a dataset comprised of ONLY the records that are being updated. This kind of dataset is the kind that would be generated from something like Amazon DMS and filtering only for the records that were updated. The newly refactored functionality works as follows:
@@ -72,14 +72,14 @@ dd.read_parquet('./data/orig_data.parq').compute()
 #+begin_example
           name  num shirt_size
 index                         
-5          Liz    5      small
-6        James    6      large
-7         Jack    7     medium
-8         Jill   99      large
 1         Alex    3      large
 2      Brandon    2     medium
 3         Alex    3      large
 4        Duffy    4      large
+5          Liz    5      small
+6        James    6      large
+7         Jack    7     medium
+8         Jill   99      large
 9        Donna    9      large
 10       Duffy    5      large
 #+end_example
@@ -95,7 +95,7 @@ dd.read_parquet('./data/orig_data.parq').known_divisions
 #+END_SRC
 
 #+RESULTS:
-: True
+: False
 
 The following code takes the dataset without divisions and disordered index and returns the same dataset with
 divisions and an ordered index.
@@ -136,6 +136,6 @@ dd.read_parquet('./data/orig_data.parq').divisions
 #+END_SRC
 
 #+RESULTS:
-| 1 | 3 | 7 | 10 |
+| 1 | 5 | 9 | 10 |
 
 
