@@ -1,32 +1,7 @@
 
-* Problem
-
-This work is a follow-up to previous [[https://github.com/CityBaseInc/dask/blob/partial-dataframe-updates/realtime-updates/real-time-updates.org][efforts]] made to update data in dask while reading/writing only the relevant partitions. Edits were made to [[https://github.com/CityBaseInc/dask/blob/partial-dataframe-updates/dask/dataframe/io/parquet.py#L552-L670][parquet.py]] to implement functionality that would, given an original dataset and an
-updated dataset:  
-1. Identify the rows in the original dataset that were updated in the updated dataset
-2. Identify which partitions in the in the original dataset those rows are located in
-3. Use combine_first on each partition to update the data (~updated_data.combine_first(original_data)~) where original_data is only the subset of data that lines up to the partition being updated at this time
-4. Write those parititions to the existing parquet directory
-5. Update the metadata of the existing parquet file
-
-This implementation has a couple of drawbacks:
-1. Several ~compute()~ methods are used in the current implementation, which potentially slows down execution. [[https://github.com/CityBaseInc/dask/blob/partial-dataframe-updates/dask/dataframe/io/parquet.py#L600][1]], [[d][2]]
-2. Though to writing on the new paritions happens in parralel using delayed execution, combine_first happens serially, which could prove problemmatic for files with a large number of partitions or partitions with large indicies.
-
-In order to address these drawbacks, I will further explore dasks implementation of ~dd.combine_first()~ to figure out how we can replicate some of the delayed execution frameworks for implementing the type of outcome achieved in
-changes to ~parquet.py~.
-
-
-* Refactored Solution
 
 I discovered that ~combine_first~ can take any two dask dataframes with any number of partitions. In order to do this,
-it first makes the number of partitions equal across both dataframes by taking a the set of all partition divisions
-and creating new partitions based on that set. What results is two new dataframes with the same data but with 
-new divisions, each of them lining up, and from there ~combine_first~ is used. I use this as inspiration for 
-refactoring the ~replace=True~ functionality of ~to_parquet~. Note, the "new data" I will refer to going forward is a
-dataset comprised of ONLY the records that are being updated. This kind of dataset is the kind that would be generated
-from something like Amazon DMS and filtering only for the records that were updated. The newly refactored functionality
-works as follows:
+it first makes the number of partitions equal across both dataframes by taking the set of all partition divisionsand creating new partitions based on that set. What results is two new dataframes with the same data but with new divisions, each of them lining up, and from there ~combine_first~ is used. I use this as inspiration for refactoring the ~replace=True~ functionality of ~to_parquet~. Note, the "new data" I will refer to going forward is a dataset comprised of ONLY the records that are being updated. This kind of dataset is the kind that would be generated from something like Amazon DMS and filtering only for the records that were updated. The newly refactored functionality works as follows:
 1. Repartition the new data based on the partitions from the existing dataset
 2. Identify the partitions that these new data are located in
 3. Filter both the new data and the original data by partition and use ~combine_first~ only on that subset of partitions
@@ -58,12 +33,15 @@ original_data = pd.DataFrame(data=[['Vidal', 1, 'large'],      # Old Records
 
 original_data_dd = dd.from_pandas(original_data, npartitions=3)
 
-original_data_dd.to_parquet('./orig_data.parq')
+t0 = time.time()
+original_data_dd.to_parquet('./data/orig_data.parq')
+t1 = time.time()
 
+print("PRINT:", t1-t0)
 
 #+END_SRC
 
-Next, I define two records that exist in the original data, but are now updated. These are records at indicies 1 and 10.
+Next, I define two records that exist - based on the index value - in the original data, but are now updated. These are records at indicies 1 and 10.
 I convert this Pandas DataFrame into a Dask DataFrame and write to a parquet file using the same filename as the
 original data, ensuring to set ~replace=True~.
 #+BEGIN_SRC python :session x :results none
@@ -74,15 +52,20 @@ updated_data = pd.DataFrame(data=[['Alex', 3, 'large'],        # Updated record 
 
 updated_data_dd = dd.from_pandas(updated_data, npartitions=1)
 
-updated_data_dd.to_parquet('./orig_data.parq', replace=True)
+import time
 
+t0 = time.time()
+updated_data_dd.to_parquet('./data/orig_data.parq', replace=True)
+t1 = time.time()
+
+print("TIME:", t1-t0)
 #+END_SRC
 
 By reading in the data that was just written, we can see that the updates are reflected in the dataset below at
 indicies 1 and 10. There is, however, one glaring issue. The output returns a dataset that is not ordered by
 index value.
 #+BEGIN_SRC python :session x :exports both
-dd.read_parquet('./orig_data.parq').compute()
+dd.read_parquet('./data/orig_data.parq').compute()
 #+END_SRC
 
 #+RESULTS:
@@ -101,30 +84,34 @@ index
 10       Duffy    5      large
 #+end_example
 
+
 A second issue with the above result is that the resulting DataFrame no longer has known divisions. This suggests
 that this dataset cannot be updated in the way the original dataset was updated unless:
 1. We correct for the issue after the updated dataset has been written
 2. Build into the to_parquet functionality a check to make sure that the existing dataset has divisions - if not, 
 make the fix before proceeding. An example of code that fixes the issue is shown below. 
 #+BEGIN_SRC python :session x :exports both
-dd.read_parquet('./orig_data.parq').known_divisions
+dd.read_parquet('./data/orig_data.parq').known_divisions
 #+END_SRC
 
 #+RESULTS:
-: False
+: True
 
 The following code takes the dataset without divisions and disordered index and returns the same dataset with
 divisions and an ordered index.
 #+BEGIN_SRC python :session x :exports both
-d = dd.read_parquet('./orig_data.parq')
+t0 = time.time()
+d = dd.read_parquet('./data/orig_data.parq')
 
 d = d.reset_index()
-d = d.sort_values(by='index')
+#d = d.sort_values(by='index')
 d = d.set_index('index')
 
-d.to_parquet('./orig_data.parq')
+d.to_parquet('./data/orig_data.parq')
+t1 = time.time()
 
-dd.read_parquet('./orig_data.parq').compute()
+print("PRINT:", t1-t0)
+dd.read_parquet('./data/orig_data.parq').compute()
 #+END_SRC
 
 #+RESULTS:
@@ -145,8 +132,10 @@ index
 
 The divisions for the newly fixed dataset can be seen below.
 #+BEGIN_SRC python :session x :exports both
-dd.read_parquet('./orig_data.parq').divisions
+dd.read_parquet('./data/orig_data.parq').divisions
 #+END_SRC
 
 #+RESULTS:
-| 1 | 2 | 6 | 10 |
+| 1 | 3 | 7 | 10 |
+
+
