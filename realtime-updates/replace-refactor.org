@@ -63,14 +63,14 @@ dd.read_parquet('./data/orig_data.parq').compute()
 #+begin_example
           name  num shirt_size
 index                         
-1         Alex    3      large
-2      Brandon    2     medium
-3         Alex    3      large
-4        Duffy    4      large
 5          Liz    5      small
 6        James    6      large
 7         Jack    7     medium
 8         Jill   99      large
+1         Alex    3      large
+2      Brandon    2     medium
+3         Alex    3      large
+4        Duffy    4      large
 9        Donna    9      large
 10       Duffy    5      large
 #+end_example
@@ -124,6 +124,6 @@ dd.read_parquet('./data/orig_data.parq').divisions
 #+END_SRC
 
 #+RESULTS:
-| 1 | 5 | 9 | 10 |
+| 1 | 2 | 6 | 10 |
 
 
