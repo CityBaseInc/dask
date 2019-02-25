@@ -88,7 +88,7 @@ environment on your computer to compile them when installing with ``pip``::
 Install Dask and dependencies::
 
    cd dask
-   pip install -e .[complete]
+   pip install -e ".[complete]"
 
 For development, Dask uses the following additional dependencies::
 
@@ -101,7 +101,7 @@ Run Tests
 Dask uses py.test_ for testing.  You can run tests from the main dask directory
 as follows::
 
-   py.test dask --verbose
+   py.test dask --verbose --doctest-modules
 
 .. _py.test: http://pytest.org/latest/
 

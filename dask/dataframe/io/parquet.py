@@ -344,8 +344,9 @@ def _read_fp_multifile(fs, fs_token, paths, columns=None,
                        categories=None, index=None):
     """Read dataset with fastparquet by assuming metadata from first file"""
     from fastparquet import ParquetFile
-    from fastparquet.util import analyse_paths, get_file_scheme
+    from fastparquet.util import analyse_paths, get_file_scheme, join_path
     base, fns = analyse_paths(paths)
+    parsed_paths = [join_path(p) for p in paths]
     scheme = get_file_scheme(fns)
     pf = ParquetFile(paths[0], open_with=fs.open)
     pf.file_scheme = scheme
@@ -359,7 +360,7 @@ def _read_fp_multifile(fs, fs_token, paths, columns=None,
                        index_names, all_columns, out_type == Series,
                        categories, pf.cats,
                        pf.file_scheme, storage_name_mapping)
-           for i, path in enumerate(paths)}
+           for i, path in enumerate(parsed_paths)}
     divisions = (None, ) * (len(paths) + 1)
     return out_type(dsk, name, meta, divisions)
 
@@ -687,9 +688,6 @@ def _read_pyarrow(fs, fs_token, paths, columns=None, filters=None,
     # We would like to resolve these to the correct dataframe names
     # as soon as possible.
 
-    if filters is not None:
-        raise NotImplementedError("Predicate pushdown not implemented")
-
     if isinstance(categories, string_types):
         categories = [categories]
     elif categories is None:
@@ -700,7 +698,8 @@ def _read_pyarrow(fs, fs_token, paths, columns=None, filters=None,
     if isinstance(columns, tuple):
         columns = list(columns)
 
-    dataset = pq.ParquetDataset(paths, filesystem=get_pyarrow_filesystem(fs))
+    dataset = pq.ParquetDataset(paths, filesystem=get_pyarrow_filesystem(fs),
+                                filters=filters)
     if dataset.partitions is not None:
         partitions = [n for n in dataset.partitions.partition_names
                       if n is not None]
@@ -935,8 +934,10 @@ def _read_pyarrow_parquet_piece(fs, piece, columns, index_cols, is_series,
         df = table.to_pandas()
         for cat in categories:
             df[cat] = df[cat].astype('category')
-    else:
+    elif pa.__version__ < LooseVersion('0.11.0'):
         df = table.to_pandas(categories=categories)
+    else:
+        df = table.to_pandas(categories=categories, date_as_object=False)
     has_index = not isinstance(df.index, pd.RangeIndex)
 
     if not has_index and index_cols:
@@ -1150,7 +1151,7 @@ def read_parquet(path, columns=None, filters=None, categories=None, index=None,
                     'when reading from fastparquet.ParquetFile')
             is_ParquetFile = True
     except ImportError:
-            pass
+        pass
 
     if is_ParquetFile:
         read = get_engine('fastparquet')['read']

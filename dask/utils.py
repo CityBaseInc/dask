@@ -438,7 +438,10 @@ def _skip_doctest(line):
     if stripped == '>>>' or stripped.startswith('>>> #'):
         return stripped
     elif '>>>' in stripped and '+SKIP' not in stripped:
-        return line + '  # doctest: +SKIP'
+        if '# doctest:' in line:
+            return line + ', +SKIP'
+        else:
+            return line + '  # doctest: +SKIP'
     else:
         return line
 
@@ -553,6 +556,25 @@ def funcname(func):
         return name
     except AttributeError:
         return str(func)
+
+
+def typename(typ):
+    """
+    Return the name of a type
+
+    Examples
+    --------
+    >>> typename(int)
+    'int'
+
+    >>> from dask.core import literal
+    >>> typename(literal)
+    'dask.core.literal'
+    """
+    if not typ.__module__ or typ.__module__ == 'builtins':
+        return typ.__name__
+    else:
+        return typ.__module__ + '.' + typ.__name__
 
 
 def ensure_bytes(s):
@@ -1024,3 +1046,12 @@ def has_keyword(func, keyword):
                 return keyword in inspect.getargspec(func).args
     except Exception:
         return False
+
+
+def ndimlist(seq):
+    if not isinstance(seq, (list, tuple)):
+        return 0
+    elif not seq:
+        return 1
+    else:
+        return 1 + ndimlist(seq[0])

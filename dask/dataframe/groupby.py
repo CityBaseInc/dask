@@ -12,7 +12,8 @@ from .core import (DataFrame, Series, aca, map_partitions,
                    new_dd_object, no_default, split_out_on_index)
 from .methods import drop_columns
 from .shuffle import shuffle
-from .utils import make_meta, insert_meta_param_description, raise_on_meta_error
+from .utils import (make_meta, insert_meta_param_description,
+                    raise_on_meta_error, is_series_like, is_dataframe_like)
 from ..base import tokenize
 from ..utils import derived_from, M, funcname, itemgetter
 from ..highlevelgraph import HighLevelGraph
@@ -34,14 +35,14 @@ from ..highlevelgraph import HighLevelGraph
 # groupby operation. Therefore, the alignment has to be guaranteed by the
 # caller.
 #
-# To operate on matchings paritions, most groupby operations exploit the
+# To operate on matching partitions, most groupby operations exploit the
 # corresponding support in ``apply_concat_apply``. Specifically, this function
-# operates on matching paritiotns of frame-like objects passed as varargs.
+# operates on matching partitions of frame-like objects passed as varargs.
 #
 # After the inital chunk step, the passed index is implicitly passed along to
 # subsequent operations as the index of the parittions. Groupby operations on
-# the individual parttions can then access the index via the ``levels``
-# parameter of the ``groupby`` function. The correct arguments is determined by
+# the individual partitions can then access the index via the ``levels``
+# parameter of the ``groupby`` function. The correct argument is determined by
 # the ``_determine_levels`` function.
 #
 # To minimize overhead, series in an index that were obtained by getitem on the
@@ -68,7 +69,7 @@ def _normalize_index(df, index):
     elif isinstance(index, list):
         return [_normalize_index(df, col) for col in index]
 
-    elif (isinstance(index, Series) and index.name in df.columns and
+    elif (is_series_like(index) and index.name in df.columns and
           index._name == df[index.name]._name):
         return index.name
 
@@ -95,7 +96,7 @@ def _maybe_slice(grouped, columns):
 
 def _is_aligned(df, by):
     """Check if `df` and `by` have aligned indices"""
-    if isinstance(by, (pd.Series, pd.DataFrame)):
+    if is_series_like(by) or is_dataframe_like(by):
         return df.index.equals(by.index)
     elif isinstance(by, (list, tuple)):
         return all(_is_aligned(df, i) for i in by)
@@ -153,14 +154,14 @@ def _groupby_get_group(df, by_key, get_key, columns):
     grouped = _groupby_raise_unaligned(df, by=by_key)
 
     if get_key in grouped.groups:
-        if isinstance(df, pd.DataFrame):
+        if is_dataframe_like(df):
             grouped = grouped[columns]
         return grouped.get_group(get_key)
 
     else:
         # to create empty DataFrame/Series, which has the same
         # dtype as the original
-        if isinstance(df, pd.DataFrame):
+        if is_dataframe_like(df):
             # may be SeriesGroupBy
             df = df[columns]
         return df.iloc[0:0]
@@ -228,7 +229,7 @@ def _apply_chunk(df, *index, **kwargs):
 
     g = _groupby_raise_unaligned(df, by=index)
 
-    if isinstance(df, pd.Series) or columns is None:
+    if is_series_like(df) or columns is None:
         return func(g)
     else:
         if isinstance(columns, (tuple, list, set, pd.Index)):
@@ -237,12 +238,18 @@ def _apply_chunk(df, *index, **kwargs):
 
 
 def _var_chunk(df, *index):
-    if isinstance(df, pd.Series):
+    if is_series_like(df):
         df = df.to_frame()
     g = _groupby_raise_unaligned(df, by=index)
     x = g.sum()
-    x2 = g.agg(lambda x: (x**2).sum()).rename(columns=lambda c: c + '-x2')
+
     n = g.count().rename(columns=lambda c: c + '-count')
+
+    df2 = df ** 2
+    g2 = _groupby_raise_unaligned(df2, by=index)
+    x2 = g2.sum().rename(columns=lambda c: c + '-x2')
+
+    x2.index = x.index
     return pd.concat([x, x2, n], axis=1)
 
 
@@ -263,7 +270,7 @@ def _var_agg(g, levels, ddof):
     div[div < 0] = 0
     result /= div
     result[(n - ddof) == 0] = np.nan
-    assert isinstance(result, pd.DataFrame)
+    assert is_dataframe_like(result)
     return result
 
 
@@ -276,16 +283,21 @@ def _nunique_df_chunk(df, *index, **kwargs):
     name = kwargs.pop('name')
 
     g = _groupby_raise_unaligned(df, by=index)
-    grouped = g[[name]].apply(pd.DataFrame.drop_duplicates)
-
-    # we set the index here to force a possibly duplicate index
-    # for our reduce step
-    if isinstance(levels, list):
-        grouped.index = pd.MultiIndex.from_arrays([
-            grouped.index.get_level_values(level=level) for level in levels
-        ])
+    if len(df) > 0:
+        grouped = g[[name]].apply(pd.DataFrame.drop_duplicates)
+        # we set the index here to force a possibly duplicate index
+        # for our reduce step
+        if isinstance(levels, list):
+            grouped.index = pd.MultiIndex.from_arrays([
+                grouped.index.get_level_values(level=level) for level in levels
+            ])
+        else:
+            grouped.index = grouped.index.get_level_values(level=levels)
     else:
-        grouped.index = grouped.index.get_level_values(level=levels)
+        # Manually create empty version, since groupby-apply for empty frame
+        # results in df with no columns
+        grouped = g[[name]].nunique()
+        grouped = grouped.astype(df.dtypes[grouped.columns].to_dict())
 
     return grouped
 
@@ -318,7 +330,7 @@ def _nunique_df_aggregate(df, levels, name):
 
 def _nunique_series_chunk(df, *index, **_ignored_):
     # convert series to data frame, then hand over to dataframe code path
-    assert isinstance(df, pd.Series)
+    assert is_series_like(df)
 
     df = df.to_frame()
     kwargs = dict(name=df.columns[0], levels=_determine_levels(index))
@@ -672,7 +684,7 @@ def _apply_func_to_column(df_like, column, func):
 
 
 def _apply_func_to_columns(df_like, prefix, func):
-    if isinstance(df_like, pd.DataFrame):
+    if is_dataframe_like(df_like):
         columns = df_like.columns
     else:
         # handle GroupBy objects
@@ -796,7 +808,7 @@ class _GroupBy(object):
             aggfunc = func
 
         meta = func(self._meta)
-        columns = meta.name if isinstance(meta, pd.Series) else meta.columns
+        columns = meta.name if is_series_like(meta) else meta.columns
 
         token = self._token_prefix + token
         levels = _determine_levels(self.index)
@@ -812,7 +824,7 @@ class _GroupBy(object):
     def _cum_agg(self, token, chunk, aggregate, initial):
         """ Wrapper for cumulative groupby operation """
         meta = chunk(self._meta)
-        columns = meta.name if isinstance(meta, pd.Series) else meta.columns
+        columns = meta.name if is_series_like(meta) else meta.columns
         index = self.index if isinstance(self.index, list) else [self.index]
 
         name = self._token_prefix + token
@@ -828,7 +840,7 @@ class _GroupBy(object):
                                      meta=meta)
 
         cumpart_raw_frame = (cumpart_raw.to_frame()
-                             if isinstance(meta, pd.Series)
+                             if is_series_like(meta)
                              else cumpart_raw)
 
         cumpart_ext = cumpart_raw_frame.assign(
@@ -869,7 +881,7 @@ class _GroupBy(object):
                                (cumpart_ext._name, i), (name_cum, i),
                                index, 0 if columns is None else columns,
                                aggregate, initial)
-        graph = HighLevelGraph.from_collections(name, dask, dependencies=[cumpart_ext, cumlast])
+        graph = HighLevelGraph.from_collections(name, dask, dependencies=[cumpart_raw, cumpart_ext, cumlast])
         return new_dd_object(graph, name, chunk(self._meta), self.obj.divisions)
 
     @derived_from(pd.core.groupby.GroupBy)
@@ -970,9 +982,9 @@ class _GroupBy(object):
         token = self._token_prefix + 'get_group'
 
         meta = self._meta.obj
-        if isinstance(meta, pd.DataFrame) and self._slice is not None:
+        if is_dataframe_like(meta) and self._slice is not None:
             meta = meta[self._slice]
-        columns = meta.columns if isinstance(meta, pd.DataFrame) else meta.name
+        columns = meta.columns if is_dataframe_like(meta) else meta.name
 
         return map_partitions(_groupby_get_group, self.obj, self.index, key,
                               columns, meta=meta, token=token)
@@ -1114,14 +1126,14 @@ class _GroupBy(object):
             # extract index from dataframe
             cols = ['_index_' + c for c in self.index.columns]
             index2 = df3[cols]
-            if isinstance(meta, pd.DataFrame):
+            if is_dataframe_like(meta):
                 df4 = df3.map_partitions(drop_columns, cols, meta.columns.dtype)
             else:
                 df4 = df3.drop(cols, axis=1)
         elif should_shuffle and isinstance(self.index, Series):
             index2 = df3['_index']
             index2.name = self.index.name
-            if isinstance(meta, pd.DataFrame):
+            if is_dataframe_like(meta):
                 df4 = df3.map_partitions(drop_columns, '_index',
                                          meta.columns.dtype)
             else:
