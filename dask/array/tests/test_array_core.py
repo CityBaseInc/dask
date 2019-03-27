@@ -362,7 +362,7 @@ def test_concatenate():
 
 
 @pytest.mark.parametrize('dtypes', [(('>f8', '>f8'), '>f8'),
-                                    (('<f4', '<f8'), '<f8')])
+                                    (('<f4', '<f8'), '=f8')])
 def test_concatenate_types(dtypes):
     dts_in, dt_out = dtypes
     arrs = [np.zeros(4, dtype=dt) for dt in dts_in]
@@ -3452,7 +3452,7 @@ def test_zarr_return_stored(compute):
         a = da.zeros((3, 3), chunks=(1, 1))
         a2 = a.to_zarr(d, compute=compute, return_stored=True)
         assert isinstance(a2, Array)
-        assert_eq(a, a2)
+        assert_eq(a, a2, check_graph=False)
         assert a2.chunks == a.chunks
 
 

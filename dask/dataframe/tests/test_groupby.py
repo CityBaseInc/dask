@@ -376,8 +376,9 @@ def test_series_groupby_errors():
         ss.groupby([])  # dask should raise the same error
     assert msg in str(err.value)
 
-    sss = dd.from_pandas(s, npartitions=3)
-    pytest.raises(NotImplementedError, lambda: ss.groupby(sss))
+    sss = dd.from_pandas(s, npartitions=5)
+    with pytest.raises(NotImplementedError):
+        ss.groupby(sss)
 
     with pytest.raises(KeyError):
         s.groupby('x')  # pandas
@@ -1516,3 +1517,28 @@ def test_groupby_select_column_agg():
     actual = ddf.groupby('A')['B'].agg('var')
     expected = pdf.groupby('A')['B'].agg('var')
     assert_eq(actual, expected)
+
+
+@pytest.mark.parametrize('func', [
+    lambda x: x.std(),
+    lambda x: x.groupby('x').std(),
+    lambda x: x.groupby('x').var(),
+    lambda x: x.groupby('x').mean(),
+    lambda x: x.groupby('x').sum(),
+    lambda x: x.groupby('x').z.std(),
+])
+def test_std_object_dtype(func):
+    df = pd.DataFrame({
+        'x': [1, 2, 1],
+        'y': ['a', 'b', 'c'],
+        'z': [11., 22., 33.],
+    })
+    ddf = dd.from_pandas(df, npartitions=2)
+
+    assert_eq(func(df), func(ddf))
+
+
+def test_timeseries():
+    df = dask.datasets.timeseries().partitions[:2]
+    assert_eq(df.groupby('name').std(),
+              df.groupby('name').std())

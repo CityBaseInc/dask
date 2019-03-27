@@ -249,7 +249,8 @@ def text_blocks_to_pandas(reader, block_lists, header, head, kwargs,
     if collection:
         if path:
             head = head.assign(**{
-                colname: pd.Categorical.from_codes(np.zeros(len(head)), paths)
+                colname: pd.Categorical.from_codes(
+                    np.zeros(len(head), dtype=int), paths)
             })
         if len(unknown_categoricals):
             head = clear_known_categories(head, cols=unknown_categoricals)
@@ -300,16 +301,18 @@ def read_pandas(reader, urlpath, blocksize=AUTO_BLOCKSIZE, collection=True,
                          "`dd.{0}`. To achieve the same behavior, it's "
                          "recommended to use `dd.{0}(...)."
                          "head(n=nrows)`".format(reader_name))
-    if isinstance(kwargs.get('skiprows'), list):
+    if isinstance(kwargs.get('skiprows'), int):
+        skiprows = lastskiprow = firstrow = kwargs.get('skiprows')
+    elif kwargs.get('skiprows') is None:
+        skiprows = lastskiprow = firstrow = 0
+    else:
         # When skiprows is a list, we expect more than max(skiprows) to
         # be included in the sample. This means that [0,2] will work well,
         # but [0, 440] might not work.
-        skiprows = kwargs.get('skiprows')
+        skiprows = set(kwargs.get('skiprows'))
         lastskiprow = max(skiprows)
         # find the firstrow that is not skipped, for use as header
         firstrow = min(set(range(len(skiprows) + 1)) - set(skiprows))
-    else:
-        skiprows = lastskiprow = firstrow = kwargs.get('skiprows', 0)
     if isinstance(kwargs.get('header'), list):
         raise TypeError("List of header rows not supported for "
                         "dd.{0}".format(reader_name))
